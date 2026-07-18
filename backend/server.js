@@ -16,7 +16,16 @@ app.use(express.static('public'));
 
 // MongoDB Setup
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('Connected to MongoDB'))
+  .then(async () => {
+    console.log('Connected to MongoDB');
+    try {
+      // Force drop the old unique index that is blocking 'null' deviceIds
+      await mongoose.connection.collection('devices').dropIndex('deviceId_1');
+      console.log('Legacy index dropped successfully');
+    } catch (err) {
+      // Index might not exist or already be sparse, ignore error
+    }
+  })
   .catch(err => console.error('MongoDB connection error:', err));
 
 const DeviceSchema = new mongoose.Schema({
