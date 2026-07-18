@@ -56,8 +56,9 @@ app.post('/admin/generate-qr', async (req, res) => {
     const provisioningJson = {
       "android.app.extra.PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME": "com.example.kavach/com.example.kavach.receiver.KavachDeviceAdminReceiver",
       "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION": `https://${req.get('host')}/apk/app-debug.apk`,
-      "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_CHECKSUM": "95Qx8wlqi57I7MXz1fsPuQPp171t7zqSitznXBsOkGM",
+      "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_CHECKSUM": "3PYrZ3qPp0fqLAj39ojDxdbfpd41K9LgvsEsV0Gy7xU",
       "android.app.extra.PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED": true,
+      "android.app.extra.PROVISIONING_MODE": 1,
       "android.app.extra.PROVISIONING_ADMIN_EXTRAS_BUNDLE": {
         "registration_token": token
       }
