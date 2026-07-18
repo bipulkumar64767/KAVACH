@@ -1,6 +1,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const QRCode = require('qrcode');
 require('dotenv').config();
 
 const app = express();
@@ -17,81 +18,198 @@ mongoose.connect(process.env.MONGODB_URI)
   .catch(err => console.error('MongoDB connection error:', err));
 
 const DeviceSchema = new mongoose.Schema({
-  deviceId: { type: String, default: 'global' },
-  isLocked: { type: Boolean, default: false },
+  deviceId: { type: String, unique: true },
+  name: String,
+  email: String,
+  model: String,
+  androidVersion: String,
+  registrationToken: { type: String, unique: true },
+  status: { type: String, enum: ['LOCKED', 'UNLOCKED', 'FREE'], default: 'UNLOCKED' },
+  isRegistered: { type: Boolean, default: false },
   lastSeen: { type: Date, default: Date.now }
 });
 
 const Device = mongoose.model('Device', DeviceSchema);
 
-// API Endpoints for Android App
-app.get('/device/status', async (req, res) => {
+// --- ADMIN API ---
+
+app.post('/admin/generate-qr', async (req, res) => {
+  const { name, email } = req.body;
+  if (!name || !email) return res.status(400).json({ error: 'Name and Email required' });
+
+  const token = Math.random().toString(36).substring(2, 15);
+
   try {
-    let device = await Device.findOne({ deviceId: 'global' });
-    if (!device) {
-      device = await Device.create({ deviceId: 'global', isLocked: false });
-    }
+    await Device.create({ registrationToken: token, name, email, isRegistered: false, status: 'UNLOCKED' });
+
+    const provisioningJson = {
+      "android.app.extra.PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME": "com.example.kavach/com.example.kavach.receiver.KavachDeviceAdminReceiver",
+      "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION": `${req.protocol}://${req.get('host')}/apk/app-debug.apk`,
+      "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_CHECKSUM": "fdf326429ca07e7fc5e82d05a2281939cff23945149819b33aa9bd4f6a11b4a8",
+      "android.app.extra.PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED": true,
+      "android.app.extra.PROVISIONING_ADMIN_EXTRAS_BUNDLE": {
+        "registration_token": token
+      }
+    };
+
+    const qrDataUrl = await QRCode.toDataURL(JSON.stringify(provisioningJson));
+    res.json({ qrCode: qrDataUrl, token });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to generate QR' });
+  }
+});
+
+app.get('/admin/devices', async (req, res) => {
+  const devices = await Device.find({ isRegistered: true }).sort({ lastSeen: -1 });
+  res.json(devices);
+});
+
+// Updated endpoint for 3 states
+app.post('/admin/update-status/:deviceId', async (req, res) => {
+  const { status } = req.body;
+  if (!['LOCKED', 'UNLOCKED', 'FREE'].includes(status)) {
+    return res.status(400).json({ error: 'Invalid status' });
+  }
+  await Device.findOneAndUpdate({ deviceId: req.params.deviceId }, { status: status });
+  res.json({ success: true, status: status });
+});
+
+// --- DEVICE API ---
+
+app.post('/device/register', async (req, res) => {
+  const { token, deviceId, model, androidVersion } = req.body;
+  try {
+    const device = await Device.findOne({ registrationToken: token });
+    if (!device) return res.status(404).json({ error: 'Invalid token' });
+
+    device.deviceId = deviceId;
+    device.model = model;
+    device.androidVersion = androidVersion;
+    device.isRegistered = true;
     device.lastSeen = new Date();
     await device.save();
-    res.json({ isLocked: device.isLocked });
+
+    res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Registration failed' });
   }
 });
 
-// Admin API to toggle lock
-app.post('/admin/lock', async (req, res) => {
-  const { lock } = req.body;
-  try {
-    await Device.findOneAndUpdate({ deviceId: 'global' }, { isLocked: lock });
-    res.json({ success: true, isLocked: lock });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to update status' });
-  }
+app.get('/device/status/:deviceId', async (req, res) => {
+  const device = await Device.findOne({ deviceId: req.params.deviceId });
+  if (!device) return res.status(404).json({ error: 'Not found' });
+
+  device.lastSeen = new Date();
+  await device.save();
+  res.json({ status: device.status });
 });
 
-// Simple Admin UI
+// --- ADMIN UI ---
 app.get('/', (req, res) => {
   res.send(`
     <!DOCTYPE html>
     <html>
     <head>
-      <title>KAVACH Admin Control</title>
+      <title>KAVACH Enterprise Dashboard</title>
       <style>
-        body { font-family: sans-serif; text-align: center; padding: 50px; }
-        .btn { padding: 20px 40px; font-size: 20px; cursor: pointer; margin: 20px; color: white; border: none; border-radius: 8px; }
-        .lock { background-color: #f44336; }
-        .unlock { background-color: #4CAF50; }
-        .status { font-weight: bold; font-size: 24px; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; display: flex; height: 100vh; background: #f0f2f5; }
+        #sidebar { width: 300px; background: #fff; border-right: 1px solid #ddd; padding: 20px; box-shadow: 2px 0 5px rgba(0,0,0,0.05); }
+        #main { flex: 1; padding: 40px; overflow-y: auto; }
+        input { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; background: #007bff; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #0056b3; }
+        table { width: 100%; background: #fff; border-collapse: collapse; box-shadow: 0 2px 10px rgba(0,0,0,0.1); border-radius: 8px; overflow: hidden; }
+        th, td { padding: 15px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #f8f9fa; color: #555; }
+        .badge { padding: 5px 10px; border-radius: 12px; font-size: 11px; font-weight: bold; }
+        .locked { background: #ffebee; color: #c62828; }
+        .unlocked { background: #e3f2fd; color: #1565c0; }
+        .free { background: #e8f5e9; color: #2e7d32; }
+        .action-btn { width: auto; padding: 6px 10px; font-size: 11px; margin-right: 5px; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .btn-lock { background: #f44336; }
+        .btn-unlock { background: #2196f3; }
+        .btn-free { background: #4caf50; }
+        #qr-container { margin-top: 20px; text-align: center; display: none; background: #fff; padding: 10px; border: 1px dashed #007bff; }
+        #qr-img { width: 100%; max-width: 200px; }
       </style>
     </head>
     <body>
-      <h1>KAVACH Enterprise Control</h1>
-      <p>Current Status: <span id="status" class="status">Loading...</span></p>
-      <button class="btn lock" onclick="updateLock(true)">Force LOCK Device</button>
-      <button class="btn unlock" onclick="updateLock(false)">Force FREE Device</button>
-      <hr>
-      <p>Download APK: <a href="/apk/app-debug.apk">app-debug.apk</a></p>
+      <div id="sidebar">
+        <h2>Register New Device</h2>
+        <input type="text" id="custName" placeholder="Customer Name">
+        <input type="email" id="custEmail" placeholder="Customer Email">
+        <button onclick="generateQR()">Generate Setup QR</button>
+        <div id="qr-container">
+          <p>Scan this on fresh device:</p>
+          <img id="qr-img" src="" alt="QR Code">
+          <p style="font-size: 10px; color: #888;">Token: <span id="token-val"></span></p>
+        </div>
+      </div>
+      <div id="main">
+        <h1>Managed Devices</h1>
+        <table id="device-table">
+          <thead>
+            <tr>
+              <th>Customer</th>
+              <th>Device Info</th>
+              <th>Last Seen</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="device-list"></tbody>
+        </table>
+      </div>
 
       <script>
-        async function getStatus() {
-          const res = await fetch('/device/status');
-          const data = await res.json();
-          document.getElementById('status').innerText = data.isLocked ? 'LOCKED' : 'FREE';
-          document.getElementById('status').style.color = data.isLocked ? 'red' : 'green';
-        }
-
-        async function updateLock(lock) {
-          await fetch('/admin/lock', {
+        async function generateQR() {
+          const name = document.getElementById('custName').value;
+          const email = document.getElementById('custEmail').value;
+          const res = await fetch('/admin/generate-qr', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ lock })
+            body: JSON.stringify({ name, email })
           });
-          getStatus();
+          const data = await res.json();
+          document.getElementById('qr-img').src = data.qrCode;
+          document.getElementById('token-val').innerText = data.token;
+          document.getElementById('qr-container').style.display = 'block';
         }
 
-        setInterval(getStatus, 5000);
-        getStatus();
+        async function loadDevices() {
+          const res = await fetch('/admin/devices');
+          const devices = await res.json();
+          const list = document.getElementById('device-list');
+          list.innerHTML = '';
+          devices.forEach(d => {
+            const lastSeen = new Date(d.lastSeen).toLocaleTimeString();
+            list.innerHTML += \`
+              <tr>
+                <td><strong>\${d.name}</strong><br><small>\${d.email}</small></td>
+                <td>\${d.model}<br><small>Android \${d.androidVersion}</small></td>
+                <td>\${lastSeen}</td>
+                <td><span class="badge \${d.status.toLowerCase()}">\${d.status}</span></td>
+                <td>
+                  <button class="action-btn btn-lock" onclick="updateStatus('\${d.deviceId}', 'LOCKED')">LOCK</button>
+                  <button class="action-btn btn-unlock" onclick="updateStatus('\${d.deviceId}', 'UNLOCKED')">UNLOCK</button>
+                  <button class="action-btn btn-free" onclick="updateStatus('\${d.deviceId}', 'FREE')">FREE</button>
+                </td>
+              </tr>
+            \`;
+          });
+        }
+
+        async function updateStatus(id, status) {
+          await fetch(\`/admin/update-status/\${id}\`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status })
+          });
+          loadDevices();
+        }
+
+        setInterval(loadDevices, 10000);
+        loadDevices();
       </script>
     </body>
     </html>
