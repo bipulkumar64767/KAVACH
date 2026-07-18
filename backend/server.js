@@ -20,7 +20,7 @@ mongoose.connect(process.env.MONGODB_URI)
   .catch(err => console.error('MongoDB connection error:', err));
 
 const DeviceSchema = new mongoose.Schema({
-  deviceId: { type: String, unique: true },
+  deviceId: { type: String, sparse: true, unique: true },
   name: String,
   email: String,
   model: String,
@@ -54,10 +54,13 @@ app.post('/admin/generate-qr', async (req, res) => {
       }
     };
 
+    console.log('Generating Provisioning JSON:', JSON.stringify(provisioningJson, null, 2));
+
     const qrDataUrl = await QRCode.toDataURL(JSON.stringify(provisioningJson));
     res.json({ qrCode: qrDataUrl, token });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to generate QR' });
+    console.error('QR Generation Error:', err);
+    res.status(500).json({ error: 'Failed to generate QR: ' + err.message });
   }
 });
 
@@ -167,15 +170,33 @@ app.get('/', (req, res) => {
         async function generateQR() {
           const name = document.getElementById('custName').value;
           const email = document.getElementById('custEmail').value;
-          const res = await fetch('/admin/generate-qr', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, email })
-          });
-          const data = await res.json();
-          document.getElementById('qr-img').src = data.qrCode;
-          document.getElementById('token-val').innerText = data.token;
-          document.getElementById('qr-container').style.display = 'block';
+          if(!name || !email) return alert('Name and Email are required');
+
+          const btn = document.querySelector('#sidebar button');
+          btn.disabled = true;
+          btn.innerText = 'Generating...';
+
+          try {
+            const res = await fetch('/admin/generate-qr', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name, email })
+            });
+            const data = await res.json();
+
+            if (data.error) {
+              alert('Error: ' + data.error);
+            } else {
+              document.getElementById('qr-img').src = data.qrCode;
+              document.getElementById('token-val').innerText = data.token;
+              document.getElementById('qr-container').style.display = 'block';
+            }
+          } catch (err) {
+            alert('Connection Failed: ' + err.message);
+          } finally {
+            btn.disabled = false;
+            btn.innerText = 'Generate Setup QR';
+          }
         }
 
         async function loadDevices() {
