@@ -55,7 +55,7 @@ app.post('/admin/generate-qr', async (req, res) => {
     const provisioningJson = {
       "android.app.extra.PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME": "com.example.kavach/com.example.kavach.receiver.KavachDeviceAdminReceiver",
       "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION": `https://${req.get('host')}/apk/app-debug.apk`,
-      "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_CHECKSUM": "w3cdxN2yMOOoxAuRHXjCTdvuRdRxm_o963Uu2TdUnbI",
+      "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_CHECKSUM": "woMurbrENRKZsYHt4S48oBOzb32-aAX2NEo9sSTAE28",
       "android.app.extra.PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED": true,
       "android.app.extra.PROVISIONING_MODE": 1,
       "android.app.extra.PROVISIONING_SKIP_ENCRYPTION": true,
@@ -78,12 +78,10 @@ app.get('/admin/check-registration/:token', async (req, res) => {
 });
 
 app.get('/admin/devices', async (req, res) => {
-  // Show ALL devices (Pending + Registered)
   const devices = await Device.find().sort({ lastSeen: -1 });
   res.json(devices);
 });
 
-// CRITICAL FIX: Use MongoDB ID (_id) for updates
 app.post('/admin/update-status/:id', async (req, res) => {
   const { status } = req.body;
   try {
@@ -303,5 +301,5 @@ app.get('/', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(\`Server running on port \${PORT}\`);
+  console.log(`Server running on port ${PORT}`);
 });
