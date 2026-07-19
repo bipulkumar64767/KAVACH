@@ -20,7 +20,6 @@ mongoose.connect(process.env.MONGODB_URI)
     console.log('Connected to MongoDB');
     try {
       await mongoose.connection.collection('devices').dropIndex('deviceId_1');
-      console.log('Legacy index dropped');
     } catch (err) {}
   })
   .catch(err => console.error('MongoDB connection error:', err));
@@ -46,7 +45,7 @@ const Device = mongoose.model('Device', DeviceSchema);
 
 app.post('/admin/generate-qr', async (req, res) => {
   const { name, email, mobile } = req.body;
-  if (!name || !email || !mobile) return res.status(400).json({ error: 'Name, Email, and Mobile required' });
+  if (!name || !email || !mobile) return res.status(400).json({ error: 'Missing required fields' });
 
   const token = Math.random().toString(36).substring(2, 15);
   const unlockPin = Math.floor(10000000 + Math.random() * 90000000).toString();
@@ -57,7 +56,7 @@ app.post('/admin/generate-qr', async (req, res) => {
     const provisioningJson = {
       "android.app.extra.PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME": "com.example.kavach/com.example.kavach.receiver.KavachDeviceAdminReceiver",
       "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION": "https://kavach-aar4.onrender.com/apk/app-debug.apk",
-      "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_CHECKSUM": "ZZAYiAfJAadO-5bxDufsStv2uyBpkC4-LQ4JRQzBG4s",
+      "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_CHECKSUM": "yWYy8rBT8XTPv9LhZvIobjRgVDOJnRVQ1FMekl6NHlM",
       "android.app.extra.PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED": true,
       "android.app.extra.PROVISIONING_MODE": 1,
       "android.app.extra.PROVISIONING_SKIP_ENCRYPTION": true,
@@ -67,7 +66,6 @@ app.post('/admin/generate-qr', async (req, res) => {
       }
     };
 
-    console.log(`[ADMIN] QR Generated for ${name} (${token})`);
     const qrDataUrl = await QRCode.toDataURL(JSON.stringify(provisioningJson));
     res.json({ qrCode: qrDataUrl, token, unlockPin });
   } catch (err) {
@@ -110,14 +108,9 @@ app.delete('/admin/device/:id', async (req, res) => {
 
 app.post('/device/register', async (req, res) => {
   const { token, deviceId, model, androidVersion } = req.body;
-  console.log(`[DEVICE] Registration request. Token: ${token}, ID: ${deviceId}, Model: ${model}`);
-
   try {
     const device = await Device.findOne({ registrationToken: token });
-    if (!device) {
-        console.warn(`[DEVICE] Invalid token used: ${token}`);
-        return res.status(404).json({ error: 'Invalid token' });
-    }
+    if (!device) return res.status(404).json({ error: 'Invalid token' });
 
     device.deviceId = deviceId;
     device.model = model;
@@ -125,10 +118,8 @@ app.post('/device/register', async (req, res) => {
     device.isRegistered = true;
     device.lastSeen = new Date();
     await device.save();
-    console.log(`[DEVICE] Successfully registered ${device.name}`);
     res.json({ success: true });
   } catch (err) {
-    console.error(`[DEVICE] Registration DB Error: ${err.message}`);
     res.status(500).json({ error: 'Registration failed' });
   }
 });
@@ -145,7 +136,6 @@ app.get('/device/status/:deviceId', async (req, res) => {
 });
 
 app.post('/device/confirm-free/:deviceId', async (req, res) => {
-  console.log(`[DEVICE] Confirmed FREE for ${req.params.deviceId}`);
   try {
     await Device.findOneAndUpdate({ deviceId: req.params.deviceId }, { status: 'FREE' });
     res.json({ success: true });
@@ -160,7 +150,7 @@ app.get('/', (req, res) => {
     <!DOCTYPE html>
     <html>
     <head>
-      <title>KAVACH Industry Dashboard</title>
+      <title>KAVACH Enterprise Dashboard</title>
       <style>
         body { font-family: 'Segoe UI', sans-serif; margin: 0; display: flex; height: 100vh; background: #f0f2f5; }
         #sidebar { width: 320px; background: #fff; border-right: 1px solid #ddd; padding: 25px; box-shadow: 2px 0 5px rgba(0,0,0,0.05); }
@@ -179,12 +169,22 @@ app.get('/', (req, res) => {
 
         .dropdown { position: relative; display: inline-block; }
         .dropbtn { background: none; border: none; font-size: 20px; cursor: pointer; color: #888; padding: 5px 10px; }
-        .dropdown-content { display: none; position: absolute; right: 0; background-color: #fff; min-width: 140px; box-shadow: 0 8px 16px rgba(0,0,0,0.1); z-index: 100; border-radius: 6px; border: 1px solid #eee; }
+        .dropdown-content {
+          display: none;
+          position: absolute;
+          right: 0;
+          background-color: #fff;
+          min-width: 160px;
+          box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+          z-index: 1000;
+          border-radius: 6px;
+          border: 1px solid #eee;
+        }
         .dropdown-content a { color: #333; padding: 12px 16px; text-decoration: none; display: block; font-size: 13px; }
         .dropdown-content a:hover { background-color: #f8f9fa; }
         .dropdown:hover .dropdown-content { display: block; }
 
-        #qr-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 1000; justify-content: center; align-items: center; }
+        #qr-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 2000; justify-content: center; align-items: center; }
         .modal-content { background: #fff; padding: 30px; border-radius: 12px; text-align: center; max-width: 400px; width: 90%; }
         #qr-img { width: 220px; height: 220px; margin: 20px 0; }
         .pin-box { background: #f8f9fa; padding: 10px; border-radius: 6px; font-weight: bold; border: 1px dashed #007bff; color: #007bff; margin: 10px 0; }
@@ -193,26 +193,20 @@ app.get('/', (req, res) => {
     <body>
       <div id="sidebar">
         <h2 style="color:#007bff;">KAVACH Admin</h2>
-        <p style="font-size:12px; color:#666;">Enterprise Device Onboarding</p>
-        <hr>
-        <input type="text" id="custName" placeholder="Full Name (Mandatory)">
-        <input type="email" id="custEmail" placeholder="Email Address (Mandatory)">
-        <input type="text" id="custMobile" placeholder="Mobile Number (Mandatory)">
-        <button class="primary-btn" onclick="generateQR()">Generate Setup QR</button>
+        <input type="text" id="custName" placeholder="Full Name">
+        <input type="email" id="custEmail" placeholder="Email Address">
+        <input type="text" id="custMobile" placeholder="Mobile Number">
+        <button class="primary-btn" onclick="generateQR()">Generate QR</button>
       </div>
 
       <div id="main">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <h1>Managed Inventory</h1>
-          <p id="clock" style="color:#888;"></p>
-        </div>
+        <h1>Inventory</h1>
         <table>
           <thead>
             <tr>
-              <th>Customer Details</th>
+              <th>Customer</th>
               <th>Hardware</th>
-              <th>Emergency PIN</th>
-              <th>Last Seen</th>
+              <th>PIN</th>
               <th>Status</th>
               <th></th>
             </tr>
@@ -227,25 +221,24 @@ app.get('/', (req, res) => {
           <div id="qr-loading">
             <img id="qr-img" src="">
             <p><strong>Emergency PIN:</strong> <span id="pin-val" class="pin-box"></span></p>
-            <p style="color: #666; font-size: 13px;">Scan during factory setup. This window will close automatically when the phone check-ins.</p>
+            <p style="color: #666; font-size: 13px;">Waiting for device check-in...</p>
           </div>
           <div id="qr-success" style="display:none;">
             <div style="font-size: 60px; color: #4caf50;">✓</div>
             <h3>Device Registered!</h3>
-            <button class="primary-btn" onclick="closeModal()">Proceed to Dashboard</button>
+            <button class="primary-btn" onclick="closeModal()">Close</button>
           </div>
         </div>
       </div>
 
       <script>
         let pollInterval;
-        setInterval(() => { document.getElementById('clock').innerText = new Date().toLocaleString(); }, 1000);
 
         async function generateQR() {
           const name = document.getElementById('custName').value;
           const email = document.getElementById('custEmail').value;
           const mobile = document.getElementById('custMobile').value;
-          if(!name || !email || !mobile) return alert('All fields are mandatory.');
+          if(!name || !email || !mobile) return alert('Fill all fields');
 
           const res = await fetch('/admin/generate-qr', {
             method: 'POST',
@@ -273,48 +266,48 @@ app.get('/', (req, res) => {
           }, 3000);
         }
 
-        function closeModal() {
-          document.getElementById('qr-modal').style.display = 'none';
-        }
+        function closeModal() { document.getElementById('qr-modal').style.display = 'none'; }
 
         async function loadDevices() {
           const res = await fetch('/admin/devices');
           const devices = await res.json();
           const list = document.getElementById('device-list');
           list.innerHTML = '';
+
           devices.forEach(d => {
             const statusClass = d.isRegistered ? d.status : 'PENDING';
-            const statusText = d.isRegistered ? d.status : 'AWAITING SETUP';
+            const statusText = d.isRegistered ? d.status : 'PENDING';
 
-            list.innerHTML += \`
-              <tr>
-                <td>
-                  <strong>\${d.name}</strong><br>
-                  <small>\${d.email}</small><br>
-                  <small>\${d.mobile}</small>
-                </td>
+            const tr = document.createElement('tr');
+            tr.innerHTML = \`
+                <td><strong>\${d.name}</strong><br><small>\${d.email}</small><br><small>\${d.mobile}</small></td>
                 <td>\${d.model}<br><small>v\${d.androidVersion}</small></td>
                 <td><code class="pin-box">\${d.unlockPin}</code></td>
-                <td>\${new Date(d.lastSeen).toLocaleTimeString()}</td>
                 <td><span class="status-pill \${statusClass}">\${statusText}</span></td>
                 <td>
                   <div class="dropdown">
                     <button class="dropbtn">⋮</button>
                     <div class="dropdown-content">
-                      <a href="#" onclick="promptLock('\${d._id}')">🔒 Lock Phone</a>
-                      <a href="#" onclick="updateStatus('\${d._id}', 'UNLOCKED')">🔓 Unlock Phone</a>
-                      <a href="#" onclick="updateStatus('\${d._id}', 'FREE_PENDING')">✅ Free Device</a>
-                      <a href="#" style="color:red;" onclick="deleteDevice('\${d._id}')">🗑 Remove Data</a>
+                      <a href="#" class="lock-link">🔒 Lock Phone</a>
+                      <a href="#" class="unlock-link">🔓 Unlock Phone</a>
+                      <a href="#" class="free-link">✅ Free Device</a>
+                      <a href="#" class="remove-link" style="color:red;">🗑 Remove</a>
                     </div>
                   </div>
                 </td>
-              </tr>
             \`;
+
+            tr.querySelector('.lock-link').onclick = (e) => { e.preventDefault(); promptLock(d._id); };
+            tr.querySelector('.unlock-link').onclick = (e) => { e.preventDefault(); updateStatus(d._id, 'UNLOCKED'); };
+            tr.querySelector('.free-link').onclick = (e) => { e.preventDefault(); updateStatus(d._id, 'FREE_PENDING'); };
+            tr.querySelector('.remove-link').onclick = (e) => { e.preventDefault(); deleteDevice(d._id); };
+
+            list.appendChild(tr);
           });
         }
 
         function promptLock(id) {
-          const reason = prompt("Reason for lockdown:", "Security Policy Violation");
+          const reason = prompt("Lockdown Reason:", "Security Policy Violation");
           if (reason !== null) updateStatus(id, 'LOCKED', reason);
         }
 
@@ -328,7 +321,7 @@ app.get('/', (req, res) => {
         }
 
         async function deleteDevice(id) {
-          if(!confirm('Delete this device?')) return;
+          if(!confirm('Remove this device?')) return;
           await fetch('/admin/device/' + id, { method: 'DELETE' });
           loadDevices();
         }
@@ -342,5 +335,5 @@ app.get('/', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(\`Server running on port \${PORT}\`);
 });
