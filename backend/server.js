@@ -241,26 +241,26 @@ app.get('/', (req, res) => {
           const list = document.getElementById('device-list');
           list.innerHTML = '';
           devices.forEach(d => {
-            list.innerHTML += `
+            list.innerHTML += \`
               <tr>
-                <td><strong>${d.name}</strong><br><small>${d.email}</small></td>
-                <td>${d.model}<br><small>Android ${d.androidVersion}</small></td>
-                <td><code class="pin-box">${d.unlockPin}</code></td>
-                <td>${new Date(d.lastSeen).toLocaleTimeString()}</td>
-                <td><span class="status-pill ${d.status}">${d.status}</span></td>
+                <td><strong>\${d.name}</strong><br><small>\${d.email}</small></td>
+                <td>\${d.model}<br><small>Android \${d.androidVersion}</small></td>
+                <td><code class="pin-box">\${d.unlockPin}</code></td>
+                <td>\${new Date(d.lastSeen).toLocaleTimeString()}</td>
+                <td><span class="status-pill \${d.status}">\${d.status}</span></td>
                 <td>
                   <div class="dropdown">
                     <button class="dropbtn">⋮</button>
                     <div class="dropdown-content">
-                      <a href="#" onclick="updateStatus('${d.deviceId}', 'LOCKED')">🔒 Lock Phone</a>
-                      <a href="#" onclick="updateStatus('${d.deviceId}', 'UNLOCKED')">🔓 Unlock Phone</a>
-                      <a href="#" onclick="updateStatus('${d.deviceId}', 'FREE')">✅ Free Phone</a>
-                      <a href="#" style="color:red;" onclick="deleteDevice('${d.deviceId}')">🗑 Remove</a>
+                      <a href="#" onclick="updateStatus('\${d.deviceId}', 'LOCKED')">🔒 Lock Phone</a>
+                      <a href="#" onclick="updateStatus('\${d.deviceId}', 'UNLOCKED')">🔓 Unlock Phone</a>
+                      <a href="#" onclick="updateStatus('\${d.deviceId}', 'FREE')">✅ Free Phone</a>
+                      <a href="#" style="color:red;" onclick="deleteDevice('\${d.deviceId}')">🗑 Remove</a>
                     </div>
                   </div>
                 </td>
               </tr>
-            `;
+            \`;
           });
         }
 
