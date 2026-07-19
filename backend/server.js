@@ -57,7 +57,7 @@ app.post('/admin/generate-qr', async (req, res) => {
     const provisioningJson = {
       "android.app.extra.PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME": "com.example.kavach/com.example.kavach.receiver.KavachDeviceAdminReceiver",
       "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION": `https://${req.get('host')}/apk/app-debug.apk`,
-      "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_CHECKSUM": "JbpK6pahDYhZ_rXGjjsRy-8TWgeL4cn-j33kqjQfIew",
+      "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_CHECKSUM": "HKu0s0WDaLgWGEv8jOoFWpXzG0KAwbCaAyoBBHXrJxU",
       "android.app.extra.PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED": true,
       "android.app.extra.PROVISIONING_MODE": 1,
       "android.app.extra.PROVISIONING_SKIP_ENCRYPTION": true,
@@ -179,7 +179,7 @@ app.get('/', (req, res) => {
 
         .dropdown { position: relative; display: inline-block; }
         .dropbtn { background: none; border: none; font-size: 20px; cursor: pointer; color: #888; padding: 5px 10px; }
-        .dropdown-content { display: none; position: absolute; right: 0; background-color: #fff; min-width: 160px; box-shadow: 0 8px 16px rgba(0,0,0,0.1); z-index: 100; border-radius: 6px; border: 1px solid #eee; }
+        .dropdown-content { display: none; position: absolute; right: 0; background-color: #fff; min-width: 140px; box-shadow: 0 8px 16px rgba(0,0,0,0.1); z-index: 100; border-radius: 6px; border: 1px solid #eee; }
         .dropdown-content a { color: #333; padding: 12px 16px; text-decoration: none; display: block; font-size: 13px; }
         .dropdown-content a:hover { background-color: #f8f9fa; }
         .dropdown:hover .dropdown-content { display: block; }
@@ -212,6 +212,7 @@ app.get('/', (req, res) => {
               <th>Customer Details</th>
               <th>Hardware</th>
               <th>Emergency PIN</th>
+              <th>Last Seen</th>
               <th>Status</th>
               <th></th>
             </tr>
@@ -294,6 +295,7 @@ app.get('/', (req, res) => {
                 </td>
                 <td>\${d.model}<br><small>v\${d.androidVersion}</small></td>
                 <td><code class="pin-box">\${d.unlockPin}</code></td>
+                <td>\${new Date(d.lastSeen).toLocaleTimeString()}</td>
                 <td><span class="status-pill \${statusClass}">\${statusText}</span></td>
                 <td>
                   <div class="dropdown">
@@ -340,5 +342,5 @@ app.get('/', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(\`Server running on port \${PORT}\`);
+  console.log(`Server running on port ${PORT}`);
 });
