@@ -20,6 +20,7 @@ mongoose.connect(process.env.MONGODB_URI)
     console.log('Connected to MongoDB');
     try {
       await mongoose.connection.collection('devices').dropIndex('deviceId_1');
+      console.log('Legacy index dropped');
     } catch (err) {}
   })
   .catch(err => console.error('MongoDB connection error:', err));
@@ -28,8 +29,8 @@ const DeviceSchema = new mongoose.Schema({
   deviceId: { type: String, sparse: true, unique: true },
   name: String,
   email: String,
-  model: String,
-  androidVersion: String,
+  model: { type: String, default: 'Awaiting Setup...' },
+  androidVersion: { type: String, default: '-' },
   registrationToken: { type: String, unique: true },
   unlockPin: String,
   status: { type: String, enum: ['LOCKED', 'UNLOCKED', 'FREE'], default: 'UNLOCKED' },
@@ -46,7 +47,7 @@ app.post('/admin/generate-qr', async (req, res) => {
   if (!name || !email) return res.status(400).json({ error: 'Name and Email required' });
 
   const token = Math.random().toString(36).substring(2, 15);
-  const unlockPin = Math.floor(10000000 + Math.random() * 90000000).toString(); // 8-digit PIN
+  const unlockPin = Math.floor(10000000 + Math.random() * 90000000).toString();
 
   try {
     await Device.create({ registrationToken: token, name, email, unlockPin, isRegistered: false, status: 'UNLOCKED' });
@@ -54,7 +55,7 @@ app.post('/admin/generate-qr', async (req, res) => {
     const provisioningJson = {
       "android.app.extra.PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME": "com.example.kavach/com.example.kavach.receiver.KavachDeviceAdminReceiver",
       "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION": `https://${req.get('host')}/apk/app-debug.apk`,
-      "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_CHECKSUM": "woMurbrENRKZsYHt4S48oBOzb32-aAX2NEo9sSTAE28",
+      "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_CHECKSUM": "w3cdxN2yMOOoxAuRHXjCTdvuRdRxm_o963Uu2TdUnbI",
       "android.app.extra.PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED": true,
       "android.app.extra.PROVISIONING_MODE": 1,
       "android.app.extra.PROVISIONING_SKIP_ENCRYPTION": true,
@@ -77,25 +78,36 @@ app.get('/admin/check-registration/:token', async (req, res) => {
 });
 
 app.get('/admin/devices', async (req, res) => {
-  const devices = await Device.find({ isRegistered: true }).sort({ lastSeen: -1 });
+  // Show ALL devices (Pending + Registered)
+  const devices = await Device.find().sort({ lastSeen: -1 });
   res.json(devices);
 });
 
-app.post('/admin/update-status/:deviceId', async (req, res) => {
+// CRITICAL FIX: Use MongoDB ID (_id) for updates
+app.post('/admin/update-status/:id', async (req, res) => {
   const { status } = req.body;
-  await Device.findOneAndUpdate({ deviceId: req.params.deviceId }, { status });
-  res.json({ success: true });
+  try {
+    await Device.findByIdAndUpdate(req.params.id, { status });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Update failed' });
+  }
 });
 
-app.delete('/admin/device/:deviceId', async (req, res) => {
-  await Device.findOneAndDelete({ deviceId: req.params.deviceId });
-  res.json({ success: true });
+app.delete('/admin/device/:id', async (req, res) => {
+  try {
+    await Device.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Delete failed' });
+  }
 });
 
 // --- DEVICE API ---
 
 app.post('/device/register', async (req, res) => {
   const { token, deviceId, model, androidVersion } = req.body;
+  console.log(`Registration attempt for token: ${token} from Device: ${deviceId}`);
   try {
     const device = await Device.findOne({ registrationToken: token });
     if (!device) return res.status(404).json({ error: 'Invalid token' });
@@ -106,6 +118,7 @@ app.post('/device/register', async (req, res) => {
     device.isRegistered = true;
     device.lastSeen = new Date();
     await device.save();
+    console.log(`Successfully registered: ${device.name}`);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Registration failed' });
@@ -140,8 +153,8 @@ app.get('/', (req, res) => {
         .LOCKED { background: #ffebee; color: #d32f2f; }
         .UNLOCKED { background: #e3f2fd; color: #1976d2; }
         .FREE { background: #e8f5e9; color: #388e3c; }
+        .PENDING { background: #fdf6e3; color: #b58900; }
 
-        /* Dropdown Menu */
         .dropdown { position: relative; display: inline-block; }
         .dropbtn { background: none; border: none; font-size: 20px; cursor: pointer; color: #888; padding: 5px 10px; }
         .dropdown-content { display: none; position: absolute; right: 0; background-color: #fff; min-width: 140px; box-shadow: 0 8px 16px rgba(0,0,0,0.1); z-index: 1; border-radius: 6px; border: 1px solid #eee; }
@@ -185,7 +198,7 @@ app.get('/', (req, res) => {
           <h2 id="modal-title">Provisioning QR</h2>
           <div id="qr-loading">
             <img id="qr-img" src="">
-            <p><strong>Unlock PIN:</strong> <span id="pin-val" class="pin-box"></span></p>
+            <p><strong>Emergency PIN:</strong> <span id="pin-val" class="pin-box"></span></p>
             <p style="color: #666; font-size: 14px;">Scan this on a fresh device. This window will close automatically upon success.</p>
           </div>
           <div id="qr-success" style="display:none;">
@@ -217,7 +230,6 @@ app.get('/', (req, res) => {
           document.getElementById('qr-loading').style.display = 'block';
           document.getElementById('qr-success').style.display = 'none';
 
-          // Start polling for registration
           if(pollInterval) clearInterval(pollInterval);
           pollInterval = setInterval(async () => {
             const check = await fetch('/admin/check-registration/' + data.token);
@@ -241,21 +253,24 @@ app.get('/', (req, res) => {
           const list = document.getElementById('device-list');
           list.innerHTML = '';
           devices.forEach(d => {
+            const statusClass = d.isRegistered ? d.status : 'PENDING';
+            const statusText = d.isRegistered ? d.status : 'AWAITING SETUP';
+
             list.innerHTML += \`
               <tr>
                 <td><strong>\${d.name}</strong><br><small>\${d.email}</small></td>
-                <td>\${d.model}<br><small>Android \${d.androidVersion}</small></td>
+                <td>\${d.model}<br><small>v\${d.androidVersion}</small></td>
                 <td><code class="pin-box">\${d.unlockPin}</code></td>
                 <td>\${new Date(d.lastSeen).toLocaleTimeString()}</td>
-                <td><span class="status-pill \${d.status}">\${d.status}</span></td>
+                <td><span class="status-pill \${statusClass}">\${statusText}</span></td>
                 <td>
                   <div class="dropdown">
                     <button class="dropbtn">⋮</button>
                     <div class="dropdown-content">
-                      <a href="#" onclick="updateStatus('\${d.deviceId}', 'LOCKED')">🔒 Lock Phone</a>
-                      <a href="#" onclick="updateStatus('\${d.deviceId}', 'UNLOCKED')">🔓 Unlock Phone</a>
-                      <a href="#" onclick="updateStatus('\${d.deviceId}', 'FREE')">✅ Free Phone</a>
-                      <a href="#" style="color:red;" onclick="deleteDevice('\${d.deviceId}')">🗑 Remove</a>
+                      <a href="#" onclick="updateStatus('\${d._id}', 'LOCKED')">🔒 Lock Phone</a>
+                      <a href="#" onclick="updateStatus('\${d._id}', 'UNLOCKED')">🔓 Unlock Phone</a>
+                      <a href="#" onclick="updateStatus('\${d._id}', 'FREE')">✅ Free Phone</a>
+                      <a href="#" style="color:red;" onclick="deleteDevice('\${d._id}')">🗑 Remove</a>
                     </div>
                   </div>
                 </td>
@@ -288,5 +303,5 @@ app.get('/', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(\`Server running on port \${PORT}\`);
 });
