@@ -51,12 +51,12 @@ app.post('/admin/generate-qr', async (req, res) => {
   const unlockPin = Math.floor(10000000 + Math.random() * 90000000).toString();
 
   try {
-    await Device.create({ registrationToken: token, name, email, mobile, unlockPin, isRegistered: false, status: 'UNLOCKED' });
+    const device = await Device.create({ registrationToken: token, name, email, mobile, unlockPin, isRegistered: false, status: 'UNLOCKED' });
 
     const provisioningJson = {
       "android.app.extra.PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME": "com.example.kavach/com.example.kavach.receiver.KavachDeviceAdminReceiver",
       "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION": "https://kavach-aar4.onrender.com/apk/app-debug.apk",
-      "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_CHECKSUM": "YHJqYwQEotj2WWX3HSvRsqEBBMANEZQbn6ezO4n1wr0",
+      "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_CHECKSUM": "DvgqQeiVIsrMPaimEbRpSBbkyGd-RIpCl3v_b03RKfs",
       "android.app.extra.PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED": true,
       "android.app.extra.PROVISIONING_MODE": 1,
       "android.app.extra.PROVISIONING_SKIP_ENCRYPTION": true,
@@ -86,7 +86,7 @@ app.get('/admin/devices', async (req, res) => {
 
 app.post('/admin/update-status/:id', async (req, res) => {
   const { status, reason } = req.body;
-  console.log(`[ADMIN] Update state for ${req.params.id} to ${status}`);
+  console.log(`[ADMIN] Request to change ${req.params.id} to ${status}`);
   try {
     const update = { status };
     if (reason) update.lockReason = reason;
@@ -110,12 +110,12 @@ app.delete('/admin/device/:id', async (req, res) => {
 
 app.post('/device/register', async (req, res) => {
   const { token, deviceId, model, androidVersion } = req.body;
-  console.log(`[DEVICE] Registration request. Token: ${token}, ID: ${deviceId}, Model: ${model}`);
+  console.log(`[DEVICE] Incoming registration: ${token} from ${deviceId}`);
 
   try {
     const device = await Device.findOne({ registrationToken: token });
     if (!device) {
-        console.warn(`[DEVICE] Invalid token used: ${token}`);
+        console.warn(`[DEVICE] Registration failed: Token ${token} not found`);
         return res.status(404).json({ error: 'Invalid token' });
     }
 
@@ -125,7 +125,7 @@ app.post('/device/register', async (req, res) => {
     device.isRegistered = true;
     device.lastSeen = new Date();
     await device.save();
-    console.log(`[DEVICE] Successfully registered ${device.name}`);
+    console.log(`[DEVICE] Registration SUCCESS for ${device.name}`);
     res.json({ success: true });
   } catch (err) {
     console.error(`[DEVICE] Registration DB Error: ${err.message}`);
@@ -136,8 +136,12 @@ app.post('/device/register', async (req, res) => {
 app.get('/device/status/:deviceId', async (req, res) => {
   const device = await Device.findOne({ deviceId: req.params.deviceId });
   if (!device) return res.status(404).json({ error: 'Not found' });
+
   device.lastSeen = new Date();
   await device.save();
+
+  console.log(`[HEARTBEAT] ${device.name} checked in. Status: ${device.status}`);
+
   res.json({
     status: device.status,
     lockReason: device.lockReason
@@ -178,12 +182,12 @@ app.get('/', (req, res) => {
 
         .dropdown { position: relative; display: inline-block; }
         .dropbtn { background: none; border: none; font-size: 20px; cursor: pointer; color: #888; padding: 5px 10px; }
-        .dropdown-content { display: none; position: absolute; right: 0; background-color: #fff; min-width: 160px; box-shadow: 0 8px 16px rgba(0,0,0,0.1); z-index: 1000; border-radius: 6px; border: 1px solid #eee; }
+        .dropdown-content { display: none; position: absolute; right: 0; background-color: #fff; min-width: 160px; box-shadow: 0 8px 16px rgba(0,0,0,0.1); z-index: 2000; border-radius: 6px; border: 1px solid #eee; }
         .dropdown-content a { color: #333; padding: 12px 16px; text-decoration: none; display: block; font-size: 13px; }
         .dropdown-content a:hover { background-color: #f8f9fa; }
         .dropdown:hover .dropdown-content { display: block; }
 
-        #qr-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 2000; justify-content: center; align-items: center; }
+        #qr-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 3000; justify-content: center; align-items: center; }
         .modal-content { background: #fff; padding: 30px; border-radius: 12px; text-align: center; max-width: 400px; width: 90%; }
         #qr-img { width: 220px; height: 220px; margin: 20px 0; }
         .pin-box { background: #f8f9fa; padding: 10px; border-radius: 6px; font-weight: bold; border: 1px dashed #007bff; color: #007bff; margin: 10px 0; }
@@ -195,7 +199,7 @@ app.get('/', (req, res) => {
         <input type="text" id="custName" placeholder="Full Name">
         <input type="email" id="custEmail" placeholder="Email Address">
         <input type="text" id="custMobile" placeholder="Mobile Number">
-        <button class="primary-btn" onclick="generateQR()">Generate Setup QR</button>
+        <button class="primary-btn" onclick="generateQR()">Generate QR</button>
       </div>
 
       <div id="main">
@@ -204,7 +208,7 @@ app.get('/', (req, res) => {
           <thead>
             <tr>
               <th>Customer</th>
-              <th>Device</th>
+              <th>Hardware</th>
               <th>PIN</th>
               <th>Status</th>
               <th></th>
@@ -237,7 +241,7 @@ app.get('/', (req, res) => {
           const name = document.getElementById('custName').value;
           const email = document.getElementById('custEmail').value;
           const mobile = document.getElementById('custMobile').value;
-          if(!name || !email || !mobile) return alert('Fill all fields');
+          if(!name || !email || !mobile) return alert('All fields are mandatory.');
 
           const res = await fetch('/admin/generate-qr', {
             method: 'POST',
@@ -254,58 +258,62 @@ app.get('/', (req, res) => {
 
           if(pollInterval) clearInterval(pollInterval);
           pollInterval = setInterval(async () => {
-            const check = await fetch('/admin/check-registration/' + data.token);
-            const status = await check.json();
-            if(status.isRegistered) {
-              document.getElementById('qr-loading').style.display = 'none';
-              document.getElementById('qr-success').style.display = 'block';
-              clearInterval(pollInterval);
-              loadDevices();
-            }
+            try {
+                const check = await fetch('/admin/check-registration/' + data.token);
+                const status = await check.json();
+                if(status.isRegistered) {
+                  document.getElementById('qr-loading').style.display = 'none';
+                  document.getElementById('qr-success').style.display = 'block';
+                  clearInterval(pollInterval);
+                  loadDevices();
+                }
+            } catch (e) {}
           }, 3000);
         }
 
         function closeModal() { document.getElementById('qr-modal').style.display = 'none'; }
 
         async function loadDevices() {
-          const res = await fetch('/admin/devices');
-          const devices = await res.json();
-          const list = document.getElementById('device-list');
-          list.innerHTML = '';
-          devices.forEach(d => {
-            const statusClass = d.isRegistered ? d.status : 'PENDING';
-            const statusText = d.isRegistered ? d.status : 'PENDING';
+          try {
+              const res = await fetch('/admin/devices');
+              const devices = await res.json();
+              const list = document.getElementById('device-list');
+              list.innerHTML = '';
+              devices.forEach(d => {
+                const statusClass = d.isRegistered ? d.status : 'PENDING';
+                const statusText = d.isRegistered ? d.status : 'PENDING';
 
-            const tr = document.createElement('tr');
-            tr.innerHTML = \`
-              <td><strong>\${d.name}</strong><br><small>\${d.email}</small><br><small>\${d.mobile}</small></td>
-              <td>\${d.model}<br><small>v\${d.androidVersion}</small></td>
-              <td><code class="pin-box">\${d.unlockPin}</code></td>
-              <td><span class="status-pill \${statusClass}">\${statusText}</span></td>
-              <td>
-                <div class="dropdown">
-                  <button class="dropbtn">⋮</button>
-                  <div class="dropdown-content">
-                    <a href="#" class="lock-link">🔒 Lock Phone</a>
-                    <a href="#" class="unlock-link">🔓 Unlock Phone</a>
-                    <a href="#" class="free-link">✅ Free Device</a>
-                    <a href="#" class="remove-link" style="color:red;">🗑 Remove</a>
-                  </div>
-                </div>
-              </td>
-            \`;
+                const tr = document.createElement('tr');
+                tr.innerHTML = \`
+                    <td><strong>\${d.name}</strong><br><small>\${d.email}</small><br><small>\${d.mobile}</small></td>
+                    <td>\${d.model}<br><small>v\${d.androidVersion}</small></td>
+                    <td><code class="pin-box">\${d.unlockPin}</code></td>
+                    <td><span class="status-pill \${statusClass}">\${statusText}</span></td>
+                    <td>
+                      <div class="dropdown">
+                        <button class="dropbtn">⋮</button>
+                        <div class="dropdown-content">
+                          <a href="#" class="lock-link">🔒 Lock Phone</a>
+                          <a href="#" class="unlock-link">🔓 Unlock Phone</a>
+                          <a href="#" class="free-link">✅ Free Device</a>
+                          <a href="#" class="remove-link" style="color:red;">🗑 Remove</a>
+                        </div>
+                      </div>
+                    </td>
+                \`;
 
-            tr.querySelector('.lock-link').onclick = (e) => { e.preventDefault(); promptLock(d._id); };
-            tr.querySelector('.unlock-link').onclick = (e) => { e.preventDefault(); updateStatus(d._id, 'UNLOCKED'); };
-            tr.querySelector('.free-link').onclick = (e) => { e.preventDefault(); updateStatus(d._id, 'FREE_PENDING'); };
-            tr.querySelector('.remove-link').onclick = (e) => { e.preventDefault(); deleteDevice(d._id); };
+                tr.querySelector('.lock-link').onclick = (e) => { e.preventDefault(); promptLock(d._id); };
+                tr.querySelector('.unlock-link').onclick = (e) => { e.preventDefault(); updateStatus(d._id, 'UNLOCKED'); };
+                tr.querySelector('.free-link').onclick = (e) => { e.preventDefault(); updateStatus(d._id, 'FREE_PENDING'); };
+                tr.querySelector('.remove-link').onclick = (e) => { e.preventDefault(); deleteDevice(d._id); };
 
-            list.appendChild(tr);
-          });
+                list.appendChild(tr);
+              });
+          } catch (e) {}
         }
 
         function promptLock(id) {
-          const reason = prompt("Reason for lockdown:", "Security Policy Violation");
+          const reason = prompt("Lockdown Reason:", "Security Policy Violation");
           if (reason !== null) updateStatus(id, 'LOCKED', reason);
         }
 
