@@ -56,7 +56,7 @@ app.post('/admin/generate-qr', async (req, res) => {
     const provisioningJson = {
       "android.app.extra.PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME": "com.example.kavach/com.example.kavach.receiver.KavachDeviceAdminReceiver",
       "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION": "https://kavach-aar4.onrender.com/apk/app-debug.apk",
-      "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_CHECKSUM": "yWYy8rBT8XTPv9LhZvIobjRgVDOJnRVQ1FMekl6NHlM",
+      "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_CHECKSUM": "YHJqYwQEotj2WWX3HSvRsqEBBMANEZQbn6ezO4n1wr0",
       "android.app.extra.PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED": true,
       "android.app.extra.PROVISIONING_MODE": 1,
       "android.app.extra.PROVISIONING_SKIP_ENCRYPTION": true,
@@ -66,6 +66,7 @@ app.post('/admin/generate-qr', async (req, res) => {
       }
     };
 
+    console.log(`[ADMIN] QR Generated for ${name} (${token})`);
     const qrDataUrl = await QRCode.toDataURL(JSON.stringify(provisioningJson));
     res.json({ qrCode: qrDataUrl, token, unlockPin });
   } catch (err) {
@@ -85,6 +86,7 @@ app.get('/admin/devices', async (req, res) => {
 
 app.post('/admin/update-status/:id', async (req, res) => {
   const { status, reason } = req.body;
+  console.log(`[ADMIN] Update state for ${req.params.id} to ${status}`);
   try {
     const update = { status };
     if (reason) update.lockReason = reason;
@@ -108,9 +110,14 @@ app.delete('/admin/device/:id', async (req, res) => {
 
 app.post('/device/register', async (req, res) => {
   const { token, deviceId, model, androidVersion } = req.body;
+  console.log(`[DEVICE] Registration request. Token: ${token}, ID: ${deviceId}, Model: ${model}`);
+
   try {
     const device = await Device.findOne({ registrationToken: token });
-    if (!device) return res.status(404).json({ error: 'Invalid token' });
+    if (!device) {
+        console.warn(`[DEVICE] Invalid token used: ${token}`);
+        return res.status(404).json({ error: 'Invalid token' });
+    }
 
     device.deviceId = deviceId;
     device.model = model;
@@ -118,8 +125,10 @@ app.post('/device/register', async (req, res) => {
     device.isRegistered = true;
     device.lastSeen = new Date();
     await device.save();
+    console.log(`[DEVICE] Successfully registered ${device.name}`);
     res.json({ success: true });
   } catch (err) {
+    console.error(`[DEVICE] Registration DB Error: ${err.message}`);
     res.status(500).json({ error: 'Registration failed' });
   }
 });
@@ -169,17 +178,7 @@ app.get('/', (req, res) => {
 
         .dropdown { position: relative; display: inline-block; }
         .dropbtn { background: none; border: none; font-size: 20px; cursor: pointer; color: #888; padding: 5px 10px; }
-        .dropdown-content {
-          display: none;
-          position: absolute;
-          right: 0;
-          background-color: #fff;
-          min-width: 160px;
-          box-shadow: 0 8px 16px rgba(0,0,0,0.1);
-          z-index: 1000;
-          border-radius: 6px;
-          border: 1px solid #eee;
-        }
+        .dropdown-content { display: none; position: absolute; right: 0; background-color: #fff; min-width: 160px; box-shadow: 0 8px 16px rgba(0,0,0,0.1); z-index: 1000; border-radius: 6px; border: 1px solid #eee; }
         .dropdown-content a { color: #333; padding: 12px 16px; text-decoration: none; display: block; font-size: 13px; }
         .dropdown-content a:hover { background-color: #f8f9fa; }
         .dropdown:hover .dropdown-content { display: block; }
@@ -196,16 +195,16 @@ app.get('/', (req, res) => {
         <input type="text" id="custName" placeholder="Full Name">
         <input type="email" id="custEmail" placeholder="Email Address">
         <input type="text" id="custMobile" placeholder="Mobile Number">
-        <button class="primary-btn" onclick="generateQR()">Generate QR</button>
+        <button class="primary-btn" onclick="generateQR()">Generate Setup QR</button>
       </div>
 
       <div id="main">
-        <h1>Inventory</h1>
+        <h1>Managed Devices</h1>
         <table>
           <thead>
             <tr>
               <th>Customer</th>
-              <th>Hardware</th>
+              <th>Device</th>
               <th>PIN</th>
               <th>Status</th>
               <th></th>
@@ -273,28 +272,27 @@ app.get('/', (req, res) => {
           const devices = await res.json();
           const list = document.getElementById('device-list');
           list.innerHTML = '';
-
           devices.forEach(d => {
             const statusClass = d.isRegistered ? d.status : 'PENDING';
             const statusText = d.isRegistered ? d.status : 'PENDING';
 
             const tr = document.createElement('tr');
             tr.innerHTML = \`
-                <td><strong>\${d.name}</strong><br><small>\${d.email}</small><br><small>\${d.mobile}</small></td>
-                <td>\${d.model}<br><small>v\${d.androidVersion}</small></td>
-                <td><code class="pin-box">\${d.unlockPin}</code></td>
-                <td><span class="status-pill \${statusClass}">\${statusText}</span></td>
-                <td>
-                  <div class="dropdown">
-                    <button class="dropbtn">⋮</button>
-                    <div class="dropdown-content">
-                      <a href="#" class="lock-link">🔒 Lock Phone</a>
-                      <a href="#" class="unlock-link">🔓 Unlock Phone</a>
-                      <a href="#" class="free-link">✅ Free Device</a>
-                      <a href="#" class="remove-link" style="color:red;">🗑 Remove</a>
-                    </div>
+              <td><strong>\${d.name}</strong><br><small>\${d.email}</small><br><small>\${d.mobile}</small></td>
+              <td>\${d.model}<br><small>v\${d.androidVersion}</small></td>
+              <td><code class="pin-box">\${d.unlockPin}</code></td>
+              <td><span class="status-pill \${statusClass}">\${statusText}</span></td>
+              <td>
+                <div class="dropdown">
+                  <button class="dropbtn">⋮</button>
+                  <div class="dropdown-content">
+                    <a href="#" class="lock-link">🔒 Lock Phone</a>
+                    <a href="#" class="unlock-link">🔓 Unlock Phone</a>
+                    <a href="#" class="free-link">✅ Free Device</a>
+                    <a href="#" class="remove-link" style="color:red;">🗑 Remove</a>
                   </div>
-                </td>
+                </div>
+              </td>
             \`;
 
             tr.querySelector('.lock-link').onclick = (e) => { e.preventDefault(); promptLock(d._id); };
@@ -307,23 +305,23 @@ app.get('/', (req, res) => {
         }
 
         function promptLock(id) {
-          const reason = prompt("Lockdown Reason:", "Security Policy Violation");
+          const reason = prompt("Reason for lockdown:", "Security Policy Violation");
           if (reason !== null) updateStatus(id, 'LOCKED', reason);
         }
 
         async function updateStatus(id, status, reason = "") {
-          await fetch('/admin/update-status/' + id, {
+          const res = await fetch('/admin/update-status/' + id, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ status, reason })
           });
-          loadDevices();
+          if(res.ok) loadDevices();
         }
 
         async function deleteDevice(id) {
           if(!confirm('Remove this device?')) return;
-          await fetch('/admin/device/' + id, { method: 'DELETE' });
-          loadDevices();
+          const res = await fetch('/admin/device/' + id, { method: 'DELETE' });
+          if(res.ok) loadDevices();
         }
 
         setInterval(loadDevices, 10000);
@@ -335,5 +333,5 @@ app.get('/', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(\`Server running on port \${PORT}\`);
+  console.log(`Server running on port ${PORT}`);
 });
