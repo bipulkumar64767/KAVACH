@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KAVACH Admin Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 font-sans">
+    <div class="min-h-screen">
+        <!-- Header -->
+        <nav class="bg-red-600 text-white p-4 shadow-lg">
+            <div class="container mx-auto flex justify-between items-center">
+                <h1 class="text-2xl font-bold">KAVACH Admin</h1>
+                <span class="bg-red-700 px-3 py-1 rounded text-sm">v1.0.0</span>
+            </div>
+        </nav>
+
+        <div class="container mx-auto p-6">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+                <!-- Provisioning QR Section -->
+                <div class="bg-white p-6 rounded-lg shadow-md border-t-4 border-red-500">
+                    <h2 class="text-xl font-bold mb-4 flex items-center">
+                        <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path></svg>
+                        Provision New Device
+                    </h2>
+                    <p class="text-gray-600 mb-4 text-sm">Scan this QR code during the initial setup of a new Android device (after factory reset).</p>
+                    <div id="qr-container" class="flex flex-col items-center bg-gray-50 p-4 rounded border">
+                        <img id="qr-image" src="" alt="Provisioning QR" class="w-48 h-48 mb-4 hidden">
+                        <button onclick="generateQR()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded transition">
+                            Generate QR Code
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Devices List Section -->
+                <div class="lg:col-span-2 bg-white p-6 rounded-lg shadow-md">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-xl font-bold">Managed Devices</h2>
+                        <button onclick="fetchDevices()" class="text-blue-600 hover:underline flex items-center text-sm">
+                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                            Refresh List
+                        </button>
+                    </div>
+
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Device Info</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Heartbeat</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="device-list" class="bg-white divide-y divide-gray-200">
+                                <!-- Devices will be populated here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+
+        async function fetchDevices() {
+            try {
+                const response = await fetch(`${API_BASE}/admin/devices`);
+                const devices = await response.json();
+                const container = document.getElementById('device-list');
+                container.innerHTML = '';
+
+                devices.forEach(device => {
+                    const statusClass = device.status === 'LOCKED' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800';
+                    const lastSeen = new Date(device.lastSeen).toLocaleTimeString();
+
+                    const row = `
+                        <tr>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <div class="text-sm font-medium text-gray-900">${device.name}</div>
+                                <div class="text-xs text-gray-500">${device.deviceId}</div>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusClass}">
+                                    ${device.status}
+                                </span>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                ${lastSeen}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                <button onclick="toggleLock('${device.deviceId}', '${device.status}')" class="text-white px-3 py-1 rounded ${device.status === 'LOCKED' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}">
+                                    ${device.status === 'LOCKED' ? 'Unlock' : 'Lock'}
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                    container.innerHTML += row;
+                });
+            } catch (err) {
+                console.error('Failed to fetch devices', err);
+            }
+        }
+
+        async function toggleLock(deviceId, currentStatus) {
+            const newStatus = currentStatus === 'LOCKED' ? 'UNLOCKED' : 'LOCKED';
+            const reason = newStatus === 'LOCKED' ? 'EMI Payment Overdue' : null;
+
+            try {
+                await fetch(`${API_BASE}/admin/update-status/${deviceId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: newStatus, reason })
+                });
+                fetchDevices();
+            } catch (err) {
+                alert('Action failed');
+            }
+        }
+
+        async function generateQR() {
+            try {
+                const response = await fetch(`${API_BASE}/admin/generate-qr`);
+                const data = await response.json();
+                const img = document.getElementById('qr-image');
+                img.src = data.qrImage;
+                img.classList.remove('hidden');
+            } catch (err) {
+                alert('Failed to generate QR');
+            }
+        }
+
+        // Initial load
+        fetchDevices();
+        setInterval(fetchDevices, 5000); // Auto-refresh every 5 seconds
+    </script>
+</body>
+</html>
